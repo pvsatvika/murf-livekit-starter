@@ -10,7 +10,7 @@ from livekit.agents import (
     JobContext,
     cli,
 )
-from livekit.plugins import deepgram, murf,silero
+from livekit.plugins import deepgram, murf, silero
 
 logger = logging.getLogger("asha-agent")
 load_dotenv(".env.local")
@@ -51,7 +51,11 @@ async def my_agent(ctx: JobContext):
     session = AgentSession(
         stt=deepgram.STT(model="nova-3"),
         llm="openai/gpt-4o-mini",
-        tts=murf.TTS(voice="en-IN-anisha", style="Conversational", api_key=os.getenv("MURF_API_KEY")),
+        tts=murf.TTS(
+            voice="en-IN-anisha",
+            style="Conversational",
+            api_key=os.getenv("MURF_API_KEY"),
+        ),
         vad=ctx.proc.userdata["vad"],
     )
 
