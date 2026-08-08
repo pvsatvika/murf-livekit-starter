@@ -1,104 +1,60 @@
+import { AccessToken, RoomServiceClient } from 'livekit-server-sdk';
 import { NextResponse } from 'next/server';
-import { AccessToken, type AccessTokenOptions, type VideoGrant } from 'livekit-server-sdk';
-import { RoomConfiguration } from '@livekit/protocol';
 
-type ConnectionDetails = {
-  serverUrl: string;
-  roomName: string;
-  participantName: string;
-  participantToken: string;
-};
-
-// NOTE: you are expected to define the following environment variables in `.env.local`:
-const API_KEY = process.env.LIVEKIT_API_KEY;
-const API_SECRET = process.env.LIVEKIT_API_SECRET;
-const LIVEKIT_URL = process.env.LIVEKIT_URL;
-
-// don't cache the results
-export const revalidate = 0;
-
-export async function POST(req: Request) {
-  // make an exception for the vercel preview environment
-  if (process.env.NODE_ENV !== 'development' && process.env.IS_VERCEL_PREVIEW !== 'true') {
-    throw new Error(
-      'THIS API ROUTE IS INSECURE. DO NOT USE THIS ROUTE IN PRODUCTION WITHOUT AN AUTHENTICATION LAYER.'
-    );
-  }
-
+export async function POST() {
   try {
-    if (LIVEKIT_URL === undefined) {
-      throw new Error('LIVEKIT_URL is not defined');
-    }
-    if (API_KEY === undefined) {
-      throw new Error('LIVEKIT_API_KEY is not defined');
-    }
-    if (API_SECRET === undefined) {
-      throw new Error('LIVEKIT_API_SECRET is not defined');
+    const roomName = `room-${Math.random().toString(36).substring(7)}`;
+    const identity = `user-${Math.random().toString(36).substring(7)}`;
+
+    const apiKey = process.env.LIVEKIT_API_KEY;
+    const apiSecret = process.env.LIVEKIT_API_SECRET;
+    const wsUrl = process.env.LIVEKIT_URL;
+
+    if (!apiKey || !apiSecret || !wsUrl) {
+      return NextResponse.json(
+        { error: 'LiveKit environment variables missing in frontend' },
+        { status: 500 }
+      );
     }
 
-    // Safely parse room config from request body
-    let body: any = {};
+    // 1. Explicitly create the room and dispatch the agent via RoomServiceClient
+    const httpUrl = wsUrl.replace('wss://', 'https://').replace('ws://', 'http://');
+    const roomService = new RoomServiceClient(httpUrl, apiKey, apiSecret);
+
     try {
-      body = await req.json();
-    } catch {
-      // Body was empty or invalid JSON, fallback to empty object
+      await roomService.createRoom({
+        name: roomName,
+        emptyTimeout: 300,
+        agents: [
+          {
+            agentName: 'agent',
+          },
+        ],
+      });
+    } catch (e) {
+      // Room might already exist or auto-create; safe to proceed
     }
 
-    const roomConfig = body?.room_config
-      ? RoomConfiguration.fromJson(body.room_config, { ignoreUnknownFields: true })
-      : new RoomConfiguration();
-
-    // Generate participant token
-    const participantName = 'user';
-    const participantIdentity = `voice_assistant_user_${Math.floor(Math.random() * 10_000)}`;
-    const roomName = `voice_assistant_room_${Math.floor(Math.random() * 10_000)}`;
-
-    const participantToken = await createParticipantToken(
-      { identity: participantIdentity, name: participantName },
-      roomName,
-      roomConfig
-    );
-
-    // Return connection details
-    const data: ConnectionDetails = {
-      serverUrl: LIVEKIT_URL,
-      roomName,
-      participantName,
-      participantToken,
-    };
-    const headers = new Headers({
-      'Cache-Control': 'no-store',
+    // 2. Issue the participant token
+    const at = new AccessToken(apiKey, apiSecret, {
+      identity,
+      ttl: '10m',
     });
-    return NextResponse.json(data, { headers });
-  } catch (error) {
-    if (error instanceof Error) {
-      console.error(error);
-      return new NextResponse(error.message, { status: 500 });
-    }
+
+    at.addGrant({
+      room: roomName,
+      roomJoin: true,
+      canPublish: true,
+      canSubscribe: true,
+    });
+
+    const participantToken = await at.toJwt();
+
+    return NextResponse.json({
+      participantToken,
+      serverUrl: wsUrl,
+    });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
-}
-
-function createParticipantToken(
-  userInfo: AccessTokenOptions,
-  roomName: string,
-  roomConfig: RoomConfiguration | undefined
-): Promise<string> {
-  const at = new AccessToken(API_KEY, API_SECRET, {
-    ...userInfo,
-    ttl: '15m',
-  });
-  const grant: VideoGrant = {
-    room: roomName,
-    roomJoin: true,
-    canPublish: true,
-    canPublishData: true,
-    canSubscribe: true,
-  };
-  at.addGrant(grant);
-
-  if (roomConfig) {
-    at.roomConfig = roomConfig;
-  }
-
-  return at.toJwt();
 }
