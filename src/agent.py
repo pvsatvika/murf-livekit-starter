@@ -2,20 +2,20 @@ import logging
 import os
 from dotenv import load_dotenv
 
-from livekit import rtc
 from livekit.agents import (
     Agent,
     AgentServer,
     AgentSession,
     JobContext,
     cli,
-    tokenize,
 )
-# Ensure 'openai' is included in imports
 from livekit.plugins import deepgram, murf, openai, silero
 
 logger = logging.getLogger("asha-agent")
+
+# Load environment variables
 load_dotenv(".env.local")
+load_dotenv(".env")
 
 SYSTEM_PROMPT = """
 IDENTITY
@@ -41,8 +41,8 @@ TERMINOLOGY & LANGUAGE RULES
 
 GUARDRAILS
 - NEVER diagnose a specific disease or prescribe any prescription drugs or medication dosages.
-- Hard Refusal: If asked to give medicine or diagnose, say: "मैं दवा नहीं दे सकती और बीमारी का इलाज नहीं बता सकती। patient को पास के पीएचसी (PHC) या डॉक्टर के पास ले जाएं।"
-- Escalation Script: If severe red-flag symptoms are reported (e.g., extreme blood pressure, severe infant fever, chest pain), immediately say: "यह एक इमरजेंसी है। कृपया patient को बिना देरी किए नजदीकी अस्पताल या पीएचसी ले जाएं।"
+- Hard Refusal: If asked to give medicine or diagnose, say: "मैं दवा नहीं दे सकती और बीमारी का इलाज नहीं बता सकती। patient को पास के पीएचसी (PHC) या doctor के पास ले जाएं।"
+- Escalation Script: If severe red-flag symptoms are reported (e.g., extreme blood pressure, severe infant fever, chest pain), immediately say: "यह एक इमरजेंसी है। कृपया patient को बिना देरी किए नजदीकी अस्पताल या PHC ले जाएं।"
 
 STYLE
 - Keep all spoken responses extremely brief, clear, and professional (1 to 2 short sentences maximum).
@@ -65,8 +65,9 @@ def prewarm(proc):
 server.setup_fnc = prewarm
 
 
-@server.rtc_session(agent_name="agent")
+@server.rtc_session()
 async def my_agent(ctx: JobContext):
+    logger.info(f"Connecting to room: {ctx.room.name}")
     await ctx.connect()
 
     session = AgentSession(
@@ -74,7 +75,6 @@ async def my_agent(ctx: JobContext):
             model="nova-3",
             language="multi",
         ),
-        # Configured to use Groq API via standard OpenAI client
         llm=openai.LLM(
             model="llama-3.3-70b-versatile",
             base_url="https://api.groq.com/openai/v1",
@@ -83,8 +83,6 @@ async def my_agent(ctx: JobContext):
         tts=murf.TTS(
             voice="Namrita",
             style="Conversational",
-            tokenizer=tokenize.basic.SentenceTokenizer(min_sentence_len=2),
-            text_pacing=True,
             api_key=os.getenv("MURF_API_KEY"),
         ),
         vad=ctx.proc.userdata["vad"],
@@ -96,9 +94,9 @@ async def my_agent(ctx: JobContext):
         room=ctx.room,
     )
 
-    await session.generate_reply(
-        instructions="Greet the ASHA worker in warm, clear Hindi in 1 short sentence and ask for the patient's name and age."
-    )
+    logger.info("Session started. Speaking greeting...")
+    # Directly speak greeting audio through TTS
+    await session.say("नमस्ते! मैं आशाअसिस्ट हूँ। पेशेंट का नाम और उम्र क्या है?")
 
 
 if __name__ == "__main__":

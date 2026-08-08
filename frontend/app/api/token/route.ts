@@ -1,60 +1,36 @@
-import { AccessToken, RoomServiceClient } from 'livekit-server-sdk';
-import { NextResponse } from 'next/server';
+import { AccessToken } from "livekit-server-sdk";
+import { NextRequest, NextResponse } from "next/server";
 
-export async function POST() {
+export async function GET(request: NextRequest) {
+  const room = request.nextUrl.searchParams.get("room") || "asha-room";
+  const username = request.nextUrl.searchParams.get("username") || "asha-worker";
+
+  const apiKey = process.env.LIVEKIT_API_KEY;
+  const apiSecret = process.env.LIVEKIT_API_SECRET;
+  const wsUrl = process.env.LIVEKIT_URL || process.env.NEXT_PUBLIC_LIVEKIT_URL;
+
+  if (!apiKey || !apiSecret || !wsUrl) {
+    return NextResponse.json(
+      { error: "Missing LiveKit keys in environment variables" },
+      { status: 500 }
+    );
+  }
+
   try {
-    const roomName = `room-${Math.random().toString(36).substring(7)}`;
-    const identity = `user-${Math.random().toString(36).substring(7)}`;
+    const at = new AccessToken(apiKey, apiSecret, { identity: username });
 
-    const apiKey = process.env.LIVEKIT_API_KEY;
-    const apiSecret = process.env.LIVEKIT_API_SECRET;
-    const wsUrl = process.env.LIVEKIT_URL;
-
-    if (!apiKey || !apiSecret || !wsUrl) {
-      return NextResponse.json(
-        { error: 'LiveKit environment variables missing in frontend' },
-        { status: 500 }
-      );
-    }
-
-    // 1. Explicitly create the room and dispatch the agent via RoomServiceClient
-    const httpUrl = wsUrl.replace('wss://', 'https://').replace('ws://', 'http://');
-    const roomService = new RoomServiceClient(httpUrl, apiKey, apiSecret);
-
-    try {
-      await roomService.createRoom({
-        name: roomName,
-        emptyTimeout: 300,
-        agents: [
-          {
-            agentName: 'agent',
-          },
-        ],
-      });
-    } catch (e) {
-      // Room might already exist or auto-create; safe to proceed
-    }
-
-    // 2. Issue the participant token
-    const at = new AccessToken(apiKey, apiSecret, {
-      identity,
-      ttl: '10m',
-    });
-
+    // Grant room permissions
     at.addGrant({
-      room: roomName,
       roomJoin: true,
+      room: room,
       canPublish: true,
       canSubscribe: true,
+      canPublishData: true,
     });
 
-    const participantToken = await at.toJwt();
-
-    return NextResponse.json({
-      participantToken,
-      serverUrl: wsUrl,
-    });
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    const token = await at.toJwt();
+    return NextResponse.json({ token, url: wsUrl });
+  } catch (error) {
+    return NextResponse.json({ error: "Failed to create token" }, { status: 500 });
   }
 }

@@ -1,214 +1,305 @@
-'use client';
+"use client";
 
-import { LiveKitRoom, RoomAudioRenderer, StartAudio, useVoiceAssistant } from '@livekit/components-react';
-import { useState } from 'react';
+import { useState } from "react";
+import {
+  LiveKitRoom,
+  RoomAudioRenderer,
+  VoiceAssistantControlBar,
+  useVoiceAssistant,
+  useLocalParticipant,
+} from "@livekit/components-react";
+
+const translations = {
+  en: {
+    title: "AshaAssist Voice",
+    subtitle: "AI Assistant for ASHA Health Workers",
+    connectBtn: "Start Talking",
+    statusDisconnected: "Tap below to begin voice intake session",
+    speakingAgent: "Agent Speaking...",
+    speakingUser: "Your turn — Speak now",
+    idleState: "Listening...",
+  },
+  hi: {
+    title: "आशाअसिस्ट वॉयस",
+    subtitle: "आशा कार्यकर्ताओं के लिए AI वॉयस सहायक",
+    connectBtn: "बातचीत शुरू करें",
+    statusDisconnected: "वॉयस सेशन शुरू करने के लिए नीचे टैप करें",
+    speakingAgent: "एजेंट बोल रहा है...",
+    speakingUser: "आपकी बारी — अब बोलें",
+    idleState: "सुन रहा है...",
+  },
+};
 
 export default function Home() {
-  const [shouldConnect, setShouldConnect] = useState(false);
-  const [token, setToken] = useState<string>('');
-  const [url, setUrl] = useState<string>('');
-  const [micError, setMicError] = useState<string>('');
-  
-  // Default language set to English ('en')
-  const [lang, setLang] = useState<'en' | 'hi'>('en');
+  const [lang, setLang] = useState<"en" | "hi">("en");
+  const [token, setToken] = useState<string>("");
+  const [url, setUrl] = useState<string>("");
+  const [isConnected, setIsConnected] = useState<boolean>(false);
 
-  const handleStartCall = async () => {
+  const t = translations[lang];
+
+  const handleConnect = async () => {
     try {
-      setMicError('');
-      await navigator.mediaDevices.getUserMedia({ audio: true });
-
-      const res = await fetch('/api/token', { method: 'POST' });
-      if (!res.ok) throw new Error('Failed to get token');
-
-      const data = await res.json();
-      setToken(data.participantToken);
-      setUrl(data.serverUrl);
-      setShouldConnect(true);
-    } catch (err: any) {
-      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-        setMicError(
-          lang === 'hi'
-            ? 'माइक्रोफोन की अनुमति नहीं मिली। कृपया ब्राउज़र सेटिंग्स में माइक्रोफोन को चालू करें।'
-            : 'Microphone permission blocked. Please enable mic access in your browser settings.'
-        );
-      } else {
-        setMicError(
-          lang === 'hi'
-            ? 'कनेक्शन विफल रहा। कृपया अपना इंटरनेट कनेक्शन या सर्वर जांचें।'
-            : 'Connection failed. Please check your internet connection or backend server.'
-        );
+      const response = await fetch(`/api/token?room=asha-room&username=asha-worker`);
+      if (!response.ok) {
+        console.error("Failed to fetch token.");
+        return;
       }
+
+      const data = await response.json();
+      if (data.token) {
+        setToken(data.token);
+        setUrl(data.url || process.env.NEXT_PUBLIC_LIVEKIT_URL || "");
+        setIsConnected(true);
+      }
+    } catch (error) {
+      console.error("Failed to connect:", error);
     }
   };
 
   const handleDisconnect = () => {
-    setShouldConnect(false);
-    setToken('');
+    setIsConnected(false);
+    setToken("");
   };
 
   return (
-    <main className="min-h-screen bg-[#f8fafc] text-slate-800 flex flex-col justify-between p-6 font-sans relative">
-      {/* 1. Header with Logo & Dynamic Language Toggle */}
-      <header className="w-full max-w-6xl mx-auto flex items-center justify-between py-2">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-sky-700 text-white font-bold text-lg flex items-center justify-center shadow-sm">
-            AA
-          </div>
+    <main style={styles.container}>
+      <div style={styles.card}>
+        {/* Header */}
+        <header style={styles.header}>
           <div>
-            <h1 className="text-base font-bold text-sky-950 tracking-tight leading-none">
-              ASHA ASSIST
-            </h1>
-            <p className="text-xs text-sky-700 font-medium mt-0.5">
-              {lang === 'hi' ? 'स्वास्थ्य सेवा डिजिटल साथी' : 'Healthcare Field Assistant'}
-            </p>
-          </div>
-        </div>
-
-        {/* Dynamic Language Switcher */}
-        <div className="bg-white border border-slate-200 p-1 rounded-full text-xs font-semibold text-slate-600 shadow-sm flex items-center gap-1">
-          <button
-            onClick={() => setLang('en')}
-            className={`px-3 py-0.5 rounded-full transition-all ${
-              lang === 'en'
-                ? 'bg-sky-100 text-sky-800 font-bold'
-                : 'text-slate-500 hover:text-slate-900'
-            }`}
-          >
-            English
-          </button>
-          <span className="text-slate-300">|</span>
-          <button
-            onClick={() => setLang('hi')}
-            className={`px-3 py-0.5 rounded-full transition-all ${
-              lang === 'hi'
-                ? 'bg-sky-100 text-sky-800 font-bold'
-                : 'text-slate-500 hover:text-slate-900'
-            }`}
-          >
-            हिन्दी
-          </button>
-        </div>
-      </header>
-
-      {/* 2. Main Central Card */}
-      <div className="w-full max-w-md mx-auto my-auto">
-        <div className="bg-white border border-slate-200/80 rounded-2xl p-8 shadow-sm text-center flex flex-col items-center gap-5">
-          
-          {/* Medical Icon */}
-          <div className="w-12 h-12 rounded-xl bg-sky-50 text-sky-600 border border-sky-100 flex items-center justify-center text-xl shadow-xs">
-            🩺
+            <h1 style={styles.title}>{t.title}</h1>
+            <p style={styles.subtitle}>{t.subtitle}</p>
           </div>
 
-          <div>
-            <h2 className="text-xl font-bold text-slate-900">
-              AshaAssist Voice Agent
-            </h2>
-            <p className="text-xs text-slate-500 mt-1.5 leading-relaxed max-w-xs">
-              {lang === 'hi'
-                ? 'मरीज़ की जानकारी, लक्षण और प्राथमिक जांच में आपका डिजिटल साथी।'
-                : 'Your digital assistant for patient intake, symptom collection, and triage.'}
-            </p>
+          <div style={styles.langToggle}>
+            <button
+              style={{
+                ...styles.langBtn,
+                ...(lang === "en" ? styles.langBtnActive : {}),
+              }}
+              onClick={() => setLang("en")}
+            >
+              English
+            </button>
+            <button
+              style={{
+                ...styles.langBtn,
+                ...(lang === "hi" ? styles.langBtnActive : {}),
+              }}
+              onClick={() => setLang("hi")}
+            >
+              हिंदी
+            </button>
           </div>
+        </header>
 
-          {!shouldConnect ? (
-            /* Ready / Disconnected State */
-            <div className="w-full flex flex-col items-center gap-3 mt-2">
-              <button
-                onClick={handleStartCall}
-                className="w-full bg-sky-700 hover:bg-sky-800 text-white font-medium py-3 px-6 rounded-xl shadow-sm transition-all flex items-center justify-center gap-2 text-sm active:scale-95"
-              >
-                <span>🎙️</span>
-                <span>{lang === 'hi' ? 'बातचीत शुरू करें' : 'Start Talking'}</span>
+        {/* Stage */}
+        <div style={styles.stage}>
+          {!isConnected ? (
+            <div style={styles.idleBox}>
+              <p style={styles.idleText}>{t.statusDisconnected}</p>
+              <button onClick={handleConnect} style={styles.startBtn}>
+                <span style={{ fontSize: "20px" }}>🎙️</span> {t.connectBtn}
               </button>
-
-              <div className="flex items-center gap-1.5 text-xs text-emerald-600 font-medium mt-1">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                <span>{lang === 'hi' ? 'वॉयस असिस्टेंट ऑनलाइन है' : 'Voice Assistant Online'}</span>
-              </div>
-
-              {micError && (
-                <div className="w-full bg-red-50 border border-red-200 text-red-600 text-xs p-3 rounded-xl mt-2 text-left">
-                  {micError}
-                </div>
-              )}
             </div>
           ) : (
-            /* Connected State */
             <LiveKitRoom
               serverUrl={url}
               token={token}
-              connect={shouldConnect}
+              connect={true}
               onDisconnected={handleDisconnect}
-              audio={true}
-              video={false}
-              className="w-full"
+              data-lk-theme="default"
+              style={styles.activeRoom}
             >
-              <ActiveAssistantUI onDisconnect={handleDisconnect} lang={lang} />
+              {/* Minimalist Speaking Indicator */}
+              <ActiveVoiceStage lang={lang} />
+
+              {/* Microphone Mute Toggle & Disconnect */}
+              <VoiceAssistantControlBar controls={{ leave: true, microphone: true }} />
+              
               <RoomAudioRenderer />
-              <StartAudio label="Audio enabled" />
             </LiveKitRoom>
           )}
         </div>
-      </div>
-
-      {/* 3. Bottom Shortcut Buttons */}
-      <div className="w-full max-w-xl mx-auto flex items-center justify-center gap-3 pb-2 text-xs">
-        <button className="bg-white border border-slate-200/90 hover:border-sky-300 text-slate-700 px-4 py-2 rounded-xl shadow-2xs transition-all flex items-center gap-2">
-          <span>📋</span>
-          <span>{lang === 'hi' ? 'मरीज़ रजिस्ट्रेशन' : 'Patient Intake'}</span>
-        </button>
-
-        <button className="bg-white border border-slate-200/90 hover:border-sky-300 text-slate-700 px-4 py-2 rounded-xl shadow-2xs transition-all flex items-center gap-2">
-          <span>🩺</span>
-          <span>{lang === 'hi' ? 'लक्षण जांच' : 'Symptom Check'}</span>
-        </button>
-
-        <button className="bg-white border border-slate-200/90 hover:border-sky-300 text-slate-700 px-4 py-2 rounded-xl shadow-2xs transition-all flex items-center gap-2">
-          <span>📅</span>
-          <span>{lang === 'hi' ? 'फॉलो-अप शेड्यूल' : 'Follow-up Plan'}</span>
-        </button>
       </div>
     </main>
   );
 }
 
-/* Active State Badge Component */
-function ActiveAssistantUI({ onDisconnect, lang }: { onDisconnect: () => void; lang: 'en' | 'hi' }) {
-  const { state } = useVoiceAssistant();
+function ActiveVoiceStage({ lang }: { lang: "en" | "hi" }) {
+  const t = translations[lang];
+  const { state: agentState } = useVoiceAssistant();
+  const { localParticipant } = useLocalParticipant();
 
-  const getStatusText = () => {
-    switch (state) {
-      case 'connecting':
-        return lang === 'hi' ? 'कनेक्ट हो रहा है...' : 'Connecting...';
-      case 'listening':
-        return lang === 'hi' ? 'आपकी बात सुन रहे हैं...' : 'Listening to you...';
-      case 'speaking':
-        return lang === 'hi' ? 'एजेंट जवाब दे रहा है...' : 'AshaAssist is speaking...';
-      default:
-        return lang === 'hi' ? 'कनेक्टेड' : 'Connected';
-    }
-  };
+  const isAgentSpeaking = agentState === "speaking";
+  const isUserSpeaking = localParticipant.isSpeaking;
+
+  let badgeText = t.idleState;
+  let badgeStyle = styles.badgeIdle;
+
+  if (isAgentSpeaking) {
+    badgeText = t.speakingAgent;
+    badgeStyle = styles.badgeAgentSpeaking;
+  } else if (isUserSpeaking) {
+    badgeText = t.speakingUser;
+    badgeStyle = styles.badgeUserSpeaking;
+  }
 
   return (
-    <div className="w-full flex flex-col items-center gap-4 mt-2">
-      <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-sky-50 border border-sky-200 text-sky-800 text-xs font-semibold animate-pulse">
-        <span className="w-2 h-2 rounded-full bg-sky-600" />
-        <span>{getStatusText()}</span>
+    <div style={styles.stageInner}>
+      <div style={{ ...styles.activeBadge, ...badgeStyle }}>
+        <span style={styles.pulseDot}></span>
+        {badgeText}
       </div>
-
-      <div className="w-20 h-20 rounded-full bg-sky-50 border border-sky-200 flex items-center justify-center text-2xl relative my-1">
-        {state === 'speaking' && (
-          <div className="absolute inset-0 rounded-full bg-sky-400/20 animate-ping" />
-        )}
-        <span>{state === 'speaking' ? '🗣️' : state === 'listening' ? '🎙️' : '⏳'}</span>
-      </div>
-
-      <button
-        onClick={onDisconnect}
-        className="w-full bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 font-medium py-2.5 px-4 rounded-xl text-xs transition-all"
-      >
-        {lang === 'hi' ? 'कॉल समाप्त करें' : 'End Call'}
-      </button>
     </div>
   );
 }
+
+// Styling
+const styles: Record<string, React.CSSProperties> = {
+  container: {
+    minHeight: "100vh",
+    backgroundColor: "#0B0F17",
+    fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: "20px",
+  },
+  card: {
+    width: "100%",
+    maxWidth: "520px",
+    backgroundColor: "#131924",
+    border: "1px solid #1F293D",
+    borderRadius: "24px",
+    padding: "32px",
+    boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.5)",
+    display: "flex",
+    flexDirection: "column",
+    gap: "24px",
+  },
+  header: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: "16px",
+  },
+  title: {
+    margin: 0,
+    fontSize: "24px",
+    fontWeight: 700,
+    color: "#F8FAFC",
+  },
+  subtitle: {
+    margin: "4px 0 0 0",
+    fontSize: "14px",
+    color: "#94A3B8",
+  },
+  langToggle: {
+    display: "flex",
+    backgroundColor: "#0F172A",
+    borderRadius: "12px",
+    padding: "4px",
+    border: "1px solid #1E293B",
+  },
+  langBtn: {
+    padding: "8px 16px",
+    border: "none",
+    borderRadius: "8px",
+    backgroundColor: "transparent",
+    color: "#64748B",
+    fontWeight: 600,
+    fontSize: "14px",
+    cursor: "pointer",
+    transition: "all 0.2s ease",
+  },
+  langBtnActive: {
+    backgroundColor: "#6366F1",
+    color: "#FFFFFF",
+    boxShadow: "0 2px 10px rgba(99, 102, 241, 0.4)",
+  },
+  stage: {
+    minHeight: "220px",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#090D16",
+    borderRadius: "16px",
+    border: "1px solid #1A2333",
+    padding: "24px",
+  },
+  stageInner: {
+    width: "100%",
+    display: "flex",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: "20px 0",
+  },
+  idleBox: {
+    textAlign: "center",
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    gap: "20px",
+  },
+  idleText: {
+    margin: 0,
+    color: "#64748B",
+    fontSize: "14px",
+  },
+  startBtn: {
+    backgroundColor: "#6366F1",
+    backgroundImage: "linear-gradient(135deg, #6366F1 0%, #4F46E5 100%)",
+    color: "#FFFFFF",
+    border: "none",
+    padding: "16px 36px",
+    borderRadius: "14px",
+    fontSize: "18px",
+    fontWeight: 600,
+    cursor: "pointer",
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "10px",
+    boxShadow: "0 8px 20px rgba(99, 102, 241, 0.35)",
+  },
+  activeRoom: {
+    width: "100%",
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    gap: "32px",
+  },
+  activeBadge: {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "10px",
+    fontSize: "16px",
+    fontWeight: 600,
+    padding: "10px 24px",
+    borderRadius: "30px",
+    transition: "all 0.3s ease",
+  },
+  badgeIdle: {
+    color: "#94A3B8",
+    backgroundColor: "rgba(148, 163, 184, 0.1)",
+    border: "1px solid rgba(148, 163, 184, 0.2)",
+  },
+  badgeUserSpeaking: {
+    color: "#22C55E",
+    backgroundColor: "rgba(34, 197, 94, 0.15)",
+    border: "1px solid rgba(34, 197, 94, 0.3)",
+  },
+  badgeAgentSpeaking: {
+    color: "#38BDF8",
+    backgroundColor: "rgba(56, 189, 248, 0.15)",
+    border: "1px solid rgba(56, 189, 248, 0.3)",
+  },
+  pulseDot: {
+    width: "10px",
+    height: "10px",
+    backgroundColor: "currentColor",
+    borderRadius: "50%",
+  },
+};
