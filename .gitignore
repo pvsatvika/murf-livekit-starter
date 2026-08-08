@@ -31,3 +31,9 @@ KMS
 
 # GitHub CLI
 .github/personal-instructions.md
+
+.env
+asha_memory.db
+__pycache__/
+*.pyc
+venv/
