@@ -9,8 +9,10 @@ from livekit.agents import (
     AgentSession,
     JobContext,
     cli,
+    tokenize,
 )
-from livekit.plugins import deepgram, murf, silero
+# Ensure 'openai' is included in imports
+from livekit.plugins import deepgram, murf, openai, silero
 
 logger = logging.getLogger("asha-agent")
 load_dotenv(".env.local")
@@ -32,14 +34,15 @@ KNOWLEDGE
 - Standard patient intake procedures, basic preventive care, and health guidance for field workers.
 - Hard Stop: You do NOT have a medical license, cannot diagnose illnesses, and cannot prescribe or recommend medications.
 
-LANGUAGE
-- Code-mixed Hinglish support. Seamlessly mirror the user's language mix (e.g., if the user speaks in Hinglish like "Patient ka BP high hai", reply in matching conversational Hinglish).
-- Maintain a professional, supportive, and clear tone.
+TERMINOLOGY & LANGUAGE RULES
+- ALWAYS use the word "patient" (पेशेंट / patient).
+- NEVER use the word "मरीज़" (mariz/marise). Always replace it with "patient".
+- Speak in simple conversational Hindi / Hinglish.
 
 GUARDRAILS
 - NEVER diagnose a specific disease or prescribe any prescription drugs or medication dosages.
-- Hard Refusal: If asked to give medicine or diagnose, say: "Main medicine prescribe nahi kar sakti aur diagnose nahi kar sakti. Patient ko nearest PHC ya doctor ke paas refer karein."
-- Escalation Script: If severe red-flag symptoms are reported (e.g., extreme blood pressure, severe infant fever, chest pain), immediately say: "Yeh ek emergency status hai. Kripya patient ko bina der kiye nearest hospital ya PHC le jayein."
+- Hard Refusal: If asked to give medicine or diagnose, say: "मैं दवा नहीं दे सकती और बीमारी का इलाज नहीं बता सकती। patient को पास के पीएचसी (PHC) या डॉक्टर के पास ले जाएं।"
+- Escalation Script: If severe red-flag symptoms are reported (e.g., extreme blood pressure, severe infant fever, chest pain), immediately say: "यह एक इमरजेंसी है। कृपया patient को बिना देरी किए नजदीकी अस्पताल या पीएचसी ले जाएं।"
 
 STYLE
 - Keep all spoken responses extremely brief, clear, and professional (1 to 2 short sentences maximum).
@@ -62,19 +65,30 @@ def prewarm(proc):
 server.setup_fnc = prewarm
 
 
-@server.rtc_session(agent_name="my-agent")
+@server.rtc_session(agent_name="agent")
 async def my_agent(ctx: JobContext):
     await ctx.connect()
 
     session = AgentSession(
-        stt=deepgram.STT(model="nova-3"),
-        llm="openai/gpt-4o-mini",
+        stt=deepgram.STT(
+            model="nova-3",
+            language="multi",
+        ),
+        # Configured to use Groq API via standard OpenAI client
+        llm=openai.LLM(
+            model="llama-3.3-70b-versatile",
+            base_url="https://api.groq.com/openai/v1",
+            api_key=os.getenv("GROQ_API_KEY"),
+        ),
         tts=murf.TTS(
-            voice="en-IN-anisha",
+            voice="Namrita",
             style="Conversational",
+            tokenizer=tokenize.basic.SentenceTokenizer(min_sentence_len=2),
+            text_pacing=True,
             api_key=os.getenv("MURF_API_KEY"),
         ),
         vad=ctx.proc.userdata["vad"],
+        preemptive_generation=True,
     )
 
     await session.start(
@@ -83,7 +97,7 @@ async def my_agent(ctx: JobContext):
     )
 
     await session.generate_reply(
-        instructions="Greet the ASHA worker briefly in 1 sentence and ask for the patient's name and age to begin intake."
+        instructions="Greet the ASHA worker in warm, clear Hindi in 1 short sentence and ask for the patient's name and age."
     )
 
 
