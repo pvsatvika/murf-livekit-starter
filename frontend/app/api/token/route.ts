@@ -19,7 +19,6 @@ export async function GET(request: NextRequest) {
   try {
     const at = new AccessToken(apiKey, apiSecret, { identity: username });
 
-    // Grant room permissions
     at.addGrant({
       roomJoin: true,
       room: room,
@@ -28,11 +27,10 @@ export async function GET(request: NextRequest) {
       canPublishData: true,
     });
 
-    // Dispatch to 'asha-agent' using the RoomConfiguration class
+    // Omit agentName so it dispatches your default local dev worker
     at.roomConfig = new RoomConfiguration({
       agents: [
         new RoomAgentDispatch({
-          agentName: "asha-agent",
           metadata: "",
         }),
       ],

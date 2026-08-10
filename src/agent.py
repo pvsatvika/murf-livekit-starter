@@ -1,32 +1,49 @@
+﻿import datetime
 import logging
-import datetime
-import asyncio
 from dotenv import load_dotenv
-
-load_dotenv()
-
 from livekit.agents import (
+    AgentSession,
     JobContext,
+    JobProcess,
     WorkerOptions,
     cli,
     llm,
     voice,
 )
 from livekit.plugins import deepgram, groq, murf, silero
-from src.db import init_db
+
+load_dotenv()
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("asha-agent")
 
-init_db()
+OUTBOUND_SYSTEM_PROMPT = """
+You are AshaAssist (आशाअसिस्ट), an outbound AI healthcare assistant calling on behalf of the local Primary Health Centre (PHC).
+
+OUTBOUND CALL OPENING RULE (COMPULSORY):
+When the call starts, your first statement MUST include these three elements:
+1. WHO IS CALLING: Identify yourself as AshaAssist from the local Primary Health Centre.
+2. WHY YOU ARE CALLING: State that you are calling for a routine medication and vaccination reminder.
+3. HOW TO OPT OUT: Inform the user that they can say "stop" or "बंद करो" to opt out of future calls.
+
+LANGUAGE & SCRIPT INSTRUCTION (COMPULSORY):
+- Always write every language in its own native script.
+- Hindi → Devanagari (e.g., नमस्ते, दवा, स्वास्थ्य), NEVER romanized (never "namaste", "dawa").
+- Respond concisely and politely in warm, empathetic spoken conversational Hindi.
+
+FUNCTION TOOL USAGE:
+- If the user asks for health centre locations or emergency numbers, call the `lookup_nearest_phc` tool.
+"""
 
 
-@llm.function_tool(description="Look up the nearest Primary Health Centre (PHC), hospital, or emergency helpline for a given district or city in India.")
-async def lookup_nearest_phc(district: str) -> str:  # <-- FIXED: Made this an async function
+@llm.function_tool(
+    description="Look up the nearest Primary Health Centre (PHC), hospital, or emergency helpline for a given district or city in India."
+)
+async def lookup_nearest_phc(district: str) -> str:
     logger.info(f"🔍 [TOOL CALLED] lookup_nearest_phc for district: {district}")
-    
+
     today_str = datetime.date.today().strftime("%d %B %Y")
-    
+
     phc_registry = {
         "hyderabad": {
             "facility": "Osmania General Hospital & Community Health Centre",
@@ -45,9 +62,9 @@ async def lookup_nearest_phc(district: str) -> str:  # <-- FIXED: Made this an a
             "address": "Parel, Mumbai",
             "timing": "24x7 Emergency Services",
             "helpline": "108",
-        }
+        },
     }
-    
+
     key = district.lower().strip()
     if key in phc_registry:
         data = phc_registry[key]
@@ -62,30 +79,16 @@ async def lookup_nearest_phc(district: str) -> str:  # <-- FIXED: Made this an a
         )
 
 
-SYSTEM_PROMPT = """
-You are AshaAssist (आशाअसिस्ट), a warm and empathetic AI healthcare assistant for India.
-
-LANGUAGE & SCRIPT RULES:
-Always write every language in its own native script.
-Hindi → Devanagari (नमस्ते), never romanized (never "namaste").
-Same rule for all non-English languages.
-
-INSTRUCTIONS:
-1. Speak naturally and concisely.
-2. When a user asks for local health facilities, hospitals, or emergency numbers, call the `lookup_nearest_phc` tool.
-3. Express the tool's result naturally in full sentences. NEVER read raw JSON or key names.
-4. Always state when the information is updated from (e.g., "आज 10 अगस्त के अपडेट के अनुसार...").
-5. If the tool reports no data for a district, provide a calm spoken fallback directing the user to 108 or 104.
-"""
+def prewarm(proc: JobProcess):
+    proc.userdata["vad"] = silero.VAD.load()
 
 
 async def entrypoint(ctx: JobContext):
     await ctx.connect()
-    logger.info("✅ Agent successfully connected to room!")
+    logger.info("✅ Outbound Agent connected to room!")
 
-    # Session handles speech pipelines (VAD, STT, LLM model, TTS)
-    session = voice.AgentSession(
-        vad=silero.VAD.load(),
+    session = AgentSession(
+        vad=ctx.proc.userdata["vad"],
         stt=deepgram.STT(model="nova-3", language="multi"),
         llm=groq.LLM(model="llama-3.3-70b-versatile"),
         tts=murf.TTS(
@@ -95,26 +98,22 @@ async def entrypoint(ctx: JobContext):
         ),
     )
 
-    # Agent handles instructions and tools
     agent = voice.Agent(
-        instructions=SYSTEM_PROMPT,
+        instructions=OUTBOUND_SYSTEM_PROMPT,
         tools=[lookup_nearest_phc],
     )
 
     await session.start(agent=agent, room=ctx.room)
-    logger.info("🎙️ Voice session started successfully in room.")
+    logger.info("🎙️ Voice session started for outbound call.")
 
-    await session.say(
-        "नमस्ते! मैं आशाअसिस्ट हूँ। आज मैं आपकी क्या सहायता कर सकती हूँ?",
-        allow_interruptions=True,
+    outbound_greeting = (
+        "नमस्ते! मैं प्राथमिक स्वास्थ्य केंद्र से आशाअसिस्ट बोल रही हूँ। "
+        "मैं आपको आपकी नियमित टीकाकरण और दवा की याद दिलाने के लिए कॉल कर रही हूँ। "
+        "यदि आप यह कॉल बंद करना चाहते हैं, तो 'बंद करो' कहें।"
     )
-    logger.info("🗣️ Initial greeting spoken successfully.")
+
+    await session.say(outbound_greeting, allow_interruptions=True)
 
 
 if __name__ == "__main__":
-    cli.run_app(
-        WorkerOptions(
-            entrypoint_fnc=entrypoint,
-            agent_name="asha-agent",
-        )
-    )
+    cli.run_app(WorkerOptions(entrypoint_fnc=entrypoint, prewarm_fnc=prewarm))
