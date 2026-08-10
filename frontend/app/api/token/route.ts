@@ -1,4 +1,4 @@
-import { AccessToken } from "livekit-server-sdk";
+import { AccessToken, RoomConfiguration, RoomAgentDispatch } from "livekit-server-sdk";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function GET(request: NextRequest) {
@@ -26,6 +26,16 @@ export async function GET(request: NextRequest) {
       canPublish: true,
       canSubscribe: true,
       canPublishData: true,
+    });
+
+    // Dispatch to 'asha-agent' using the RoomConfiguration class
+    at.roomConfig = new RoomConfiguration({
+      agents: [
+        new RoomAgentDispatch({
+          agentName: "asha-agent",
+          metadata: "",
+        }),
+      ],
     });
 
     const token = await at.toJwt();

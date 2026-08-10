@@ -1,141 +1,120 @@
 import logging
-import os
-import json
+import datetime
+import asyncio
 from dotenv import load_dotenv
 
-from livekit import rtc
+load_dotenv()
+
 from livekit.agents import (
-    Agent,
-    AgentServer,
-    AgentSession,
     JobContext,
+    WorkerOptions,
     cli,
     llm,
-    tokenize
+    voice,
 )
-from livekit.plugins import deepgram, murf, openai, silero
-from src.db import init_db, get_patient, save_patient, delete_patient
+from livekit.plugins import deepgram, groq, murf, silero
+from src.db import init_db
 
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("asha-agent")
 
-load_dotenv(".env.local")
-load_dotenv(".env")
-
-# Initialize SQLite database file
 init_db()
 
-# Static test ID for the demo caller
-USER_ID = "patient_101"
 
-SYSTEM_PROMPT = f"""
-IDENTITY & ROLE
-You are 'AshaAssist', an AI voice assistant conducting patient intake sessions directly with patients.
+@llm.function_tool(description="Look up the nearest Primary Health Centre (PHC), hospital, or emergency helpline for a given district or city in India.")
+async def lookup_nearest_phc(district: str) -> str:  # <-- FIXED: Made this an async function
+    logger.info(f"🔍 [TOOL CALLED] lookup_nearest_phc for district: {district}")
+    
+    today_str = datetime.date.today().strftime("%d %B %Y")
+    
+    phc_registry = {
+        "hyderabad": {
+            "facility": "Osmania General Hospital & Community Health Centre",
+            "address": "Afzal Gunj, Hyderabad",
+            "timing": "24x7 Emergency Services",
+            "helpline": "108",
+        },
+        "delhi": {
+            "facility": "Primary Health Centre (PHC) Mehrauli",
+            "address": "Near Qutub Minar, New Delhi",
+            "timing": "8:00 AM to 4:00 PM",
+            "helpline": "102 / 108",
+        },
+        "mumbai": {
+            "facility": "KEM Hospital & Municipal Health Centre",
+            "address": "Parel, Mumbai",
+            "timing": "24x7 Emergency Services",
+            "helpline": "108",
+        }
+    }
+    
+    key = district.lower().strip()
+    if key in phc_registry:
+        data = phc_registry[key]
+        return (
+            f"As of {today_str}, the nearest facility in {district.capitalize()} is {data['facility']}, "
+            f"located at {data['address']}. Timings: {data['timing']}. Emergency Helpline: {data['helpline']}."
+        )
+    else:
+        return (
+            f"No local PHC directory entry found for '{district}' as of {today_str}. "
+            f"Direct the user to call the National Health Helpline at 104 or Emergency Ambulance at 108 immediately."
+        )
 
-DATABASE & MEMORY INSTRUCTIONS
-1. User ID for this session is '{USER_ID}'.
-2. Before anything else, use `lookup_patient` to check if patient data exists in database.
-3. IF RECORD EXISTS:
-   - Greet them warmly by name in Devanagari Hindi.
-   - Mention their previous condition from memory and ask how they are feeling today.
-4. IF NO RECORD EXISTS:
-   - Conduct intake: Gather Name, Age band, and Current Symptoms across conversational turns.
-   - MANDATORY SEQUENCE: ONLY ask for privacy consent AFTER gathering Name, Age, and Symptoms.
-   - CONSENT QUESTION: Ask in Hindi (e.g., "क्या मैं आपकी जानकारी सुरक्षित रख सकती हूँ?").
-   - EXECUTION RULE: ONLY invoke `save_patient_data` AFTER the user explicitly confirms consent (e.g., "Yes", "हाँ", "यस").
-   - If user denies consent (says NO): Do NOT save anything.
 
-LANGUAGE & SCRIPT
-- Write all Hindi in native Devanagari script (नमस्ते).
-- Keep spoken responses brief (1-2 sentences).
+SYSTEM_PROMPT = """
+You are AshaAssist (आशाअसिस्ट), a warm and empathetic AI healthcare assistant for India.
+
+LANGUAGE & SCRIPT RULES:
+Always write every language in its own native script.
+Hindi → Devanagari (नमस्ते), never romanized (never "namaste").
+Same rule for all non-English languages.
+
+INSTRUCTIONS:
+1. Speak naturally and concisely.
+2. When a user asks for local health facilities, hospitals, or emergency numbers, call the `lookup_nearest_phc` tool.
+3. Express the tool's result naturally in full sentences. NEVER read raw JSON or key names.
+4. Always state when the information is updated from (e.g., "आज 10 अगस्त के अपडेट के अनुसार...").
+5. If the tool reports no data for a district, provide a calm spoken fallback directing the user to 108 or 104.
 """
 
-@llm.function_tool(description="Look up returning patient information from the database")
-async def lookup_patient() -> str:
-    record = get_patient(USER_ID)
-    if record:
-        logger.info(f"DB Record found for {USER_ID}: {record}")
-        return json.dumps(record)
-    logger.info(f"No DB record found for {USER_ID}")
-    return "Patient not found."
 
-@llm.function_tool(
-    description="STRICT SAFETY MANDATE: Save structured patient intake details (name, age, symptoms) ONLY AFTER the user explicitly grants permission when asked."
-)
-async def save_patient_data(
-    name: str,
-    age_band: str,
-    ongoing_conditions: str,
-    last_triage_outcome: str
-) -> str:
-    facts = {
-        "age_band": age_band,
-        "ongoing_conditions": ongoing_conditions,
-        "last_triage_outcome": last_triage_outcome
-    }
-    save_patient(USER_ID, name, "hi", facts)
-    logger.info(f"✅ SUCCESSFULLY SAVED PATIENT TO SQLITE: {name}")
-    return f"Patient data for {name} saved successfully."
-
-@llm.function_tool(description="Delete saved patient records if requested by user")
-async def forget_patient() -> str:
-    delete_patient(USER_ID)
-    logger.info(f"Deleted records for {USER_ID}")
-    return "All stored records for this user have been erased."
-
-
-server = AgentServer()
-
-def prewarm(proc):
-    proc.userdata["vad"] = silero.VAD.load()
-
-server.setup_fnc = prewarm
-
-
-@server.rtc_session()
-async def my_agent(ctx: JobContext):
+async def entrypoint(ctx: JobContext):
     await ctx.connect()
+    logger.info("✅ Agent successfully connected to room!")
 
-    session = AgentSession(
-        stt=deepgram.STT(
-            model="nova-3",
-            language="multi",
-        ),
-        llm=openai.LLM(
-            model="llama-3.3-70b-versatile",
-            base_url="https://api.groq.com/openai/v1",
-            api_key=os.getenv("GROQ_API_KEY"),
-        ),
+    # Session handles speech pipelines (VAD, STT, LLM model, TTS)
+    session = voice.AgentSession(
+        vad=silero.VAD.load(),
+        stt=deepgram.STT(model="nova-3", language="multi"),
+        llm=groq.LLM(model="llama-3.3-70b-versatile"),
         tts=murf.TTS(
             voice="Anisha",
             style="Conversation",
-            tokenizer=tokenize.basic.SentenceTokenizer(min_sentence_len=2),
             text_pacing=True,
-            api_key=os.getenv("MURF_API_KEY"),
         ),
-        vad=ctx.proc.userdata["vad"],
-        preemptive_generation=True,
     )
 
-    agent = Agent(
+    # Agent handles instructions and tools
+    agent = voice.Agent(
         instructions=SYSTEM_PROMPT,
-        tools=[lookup_patient, save_patient_data, forget_patient],
+        tools=[lookup_nearest_phc],
     )
 
-    await session.start(
-        agent=agent,
-        room=ctx.room,
+    await session.start(agent=agent, room=ctx.room)
+    logger.info("🎙️ Voice session started successfully in room.")
+
+    await session.say(
+        "नमस्ते! मैं आशाअसिस्ट हूँ। आज मैं आपकी क्या सहायता कर सकती हूँ?",
+        allow_interruptions=True,
     )
-
-    # Check database on connection
-    existing_patient = get_patient(USER_ID)
-
-    if existing_patient:
-        name = existing_patient.get("name", "पेशेंट")
-        condition = existing_patient.get("facts", {}).get("ongoing_conditions", "तकलीफ")
-        await session.say(f"नमस्ते {name}! पिछली बार आपने {condition} के बारे में बताया था। अब आपकी तबियत कैसी है?")
-    else:
-        await session.say("नमस्ते! मैं आशाअसिस्ट हूँ। क्या आप अपना नाम और उम्र बता सकते हैं?")
+    logger.info("🗣️ Initial greeting spoken successfully.")
 
 
 if __name__ == "__main__":
-    cli.run_app(server)
+    cli.run_app(
+        WorkerOptions(
+            entrypoint_fnc=entrypoint,
+            agent_name="asha-agent",
+        )
+    )
