@@ -1,0 +1,15 @@
+{"reference_id": "REF-88535F", "timestamp": "2026-08-11 23:50:59", "patient": "User", "district": "User's District", "summary": "Severe chest pain and shortness of breath", "urgency": "High", "language": "English"}
+{"reference_id": "REF-66D742", "timestamp": "2026-08-11 23:51:14", "patient": "User", "district": "User's District", "summary": "Severe chest pain and shortness of breath", "urgency": "High", "language": "English"}
+{"reference_id": "REF-932379", "timestamp": "2026-08-11 23:51:29", "patient": "User", "district": "User's District", "summary": "Severe chest pain and shortness of breath", "urgency": "High", "language": "English"}
+{"reference_id": "REF-51C790", "timestamp": "2026-08-11 23:55:29", "patient": "unknown", "district": "unknown", "summary": "severe chest pain and shortness of breath", "urgency": "high", "language": "English"}
+{"reference_id": "REF-D72919", "timestamp": "2026-08-12 00:01:04", "patient": "unknown", "district": "unknown", "summary": "severe chest pain and shortness of breath", "urgency": "high", "language": "English"}
+{"reference_id": "REF-4D13B7", "timestamp": "2026-08-12 00:06:46", "patient": "Unknown", "district": "Unknown", "summary": "Severe chest pain and shortness of breath", "urgency": "High", "language": "Hindi"}
+{"reference_id": "REF-B0C56D", "timestamp": "2026-08-12 00:07:15", "patient": "Unknown", "district": "Unknown", "summary": "Severe chest pain and shortness of breath", "urgency": "High", "language": "English"}
+{"reference_id": "REF-2C6CC1", "timestamp": "2026-08-12 08:05:32", "patient": "User", "district": "Unknown", "summary": "Severe test", "urgency": "High", "language": "English"}
+{"reference_id": "REF-005611", "timestamp": "2026-08-12 08:17:41", "patient": "User", "district": "Unknown", "summary": "Severe chest pain and heavy breathing", "urgency": "High", "language": "English"}
+{"reference_id": "REF-BF8862", "timestamp": "2026-08-12 23:26:29", "patient": "Unknown", "district": "Unknown", "summary": "Severe chest pain", "urgency": "High", "language": "English"}
+{"reference_id": "REF-0180B2", "timestamp": "2026-08-12 23:26:59", "patient": "Unknown", "district": "Unknown", "summary": "Severe chest pain, severe blood loss, and vomitings", "urgency": "Critical", "language": "English"}
+{"reference_id": "REF-0CAA18", "timestamp": "2026-08-12 23:28:31", "patient": "Unknown", "district": "Unknown", "summary": "Severe blood loss", "urgency": "High", "language": "English"}
+{"reference_id": "REF-6254A6", "timestamp": "2026-08-12 23:38:44", "patient": "Unknown", "district": "Unknown", "summary": "Severe chest pain and heavy bleeding", "urgency": "High", "language": "Hindi"}
+{"reference_id": "REF-246F35", "timestamp": "2026-08-12 23:49:26", "patient": "Unknown", "district": "Unknown", "summary": "Severe chest pain and heavy bleeding", "urgency": "High", "language": "Hindi"}
+{"reference_id": "REF-25F8BC", "timestamp": "2026-08-12 23:54:59", "patient": "null", "district": "null", "summary": "severe chest pain and heavy bleeding", "urgency": "critical", "language": "null"}
